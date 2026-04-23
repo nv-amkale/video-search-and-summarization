@@ -68,7 +68,8 @@ class CustomFastApiFrontEndWorker(FastApiFrontEndPluginWorker):
         streaming_config = getattr(front_end_cfg, "streaming_ingest", None) if front_end_cfg else None
         logger.info(f"Streaming config: {streaming_config}")
 
-        # Register video upload streaming routes
+        # Register video upload streaming routes (search-profile-specific:
+        # /api/v1/videos-for-search/*, requires rtvi_embed_base_url to start).
         try:
             from vss_agents.api.video_search_ingest import register_streaming_routes
 
@@ -84,6 +85,24 @@ class CustomFastApiFrontEndWorker(FastApiFrontEndPluginWorker):
             logger.info("Skipping video streaming routes (not configured): %s", exc)
         except Exception as exc:
             logger.error("Failed to register video streaming routes: %s", exc, exc_info=True)
+            raise
+
+        # Register generic (profile-agnostic) video upload routes. Used by the
+        # Chat upload path: /api/v1/videos/chunked/upload proxies to VST and
+        # /api/v1/videos/{filename}/complete runs post-processing. These
+        # register whenever VST_INTERNAL_URL is set; each post-processing step
+        # skips gracefully if its backing service isn't configured, so this
+        # works on search/alerts/lvs/base alike.
+        try:
+            from vss_agents.api.video_search_ingest import register_generic_video_routes
+
+            logger.info("Adding generic video upload routes...")
+            register_generic_video_routes(app, self.config)
+            logger.info("Successfully registered generic video upload routes")
+        except ImportError as exc:
+            logger.debug("Generic video routes module not available: %s", exc)
+        except Exception as exc:
+            logger.error("Failed to register generic video upload routes: %s", exc, exc_info=True)
             raise
 
         # Register RTSP stream management routes
